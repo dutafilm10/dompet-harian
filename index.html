@@ -306,8 +306,7 @@ async function importData(ev){
   await loadCloud();toast('Backup diimpor ke cloud');ev.target.value='';
 }
 async function init(){
-  if(!window.SUPABASE_URL||window.SUPABASE_URL.includes('https://plxrbmblhgzcpdikuwue.supabase.co/rest/v1/
-')||!window.SUPABASE_PUBLISHABLE_KEY||window.SUPABASE_PUBLISHABLE_KEY.includes('sb_publishable_dwnKgdeFwU05Gr23s1F_KQ_U9dUcr5v')){
+  if(!window.SUPABASE_URL||window.SUPABASE_URL.includes('https://plxrbmblhgzcpdikuwue.supabase.co')||!window.SUPABASE_PUBLISHABLE_KEY||window.SUPABASE_PUBLISHABLE_KEY.includes('sb_publishable_dwnKgdeFwU05Gr23s1F_KQ_U9dUcr5v')){
     showError('Isi SUPABASE_URL dan SUPABASE_PUBLISHABLE_KEY di config.js terlebih dahulu.');return;
   }
   supabaseClient=window.supabase.createClient(window.SUPABASE_URL,window.SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
