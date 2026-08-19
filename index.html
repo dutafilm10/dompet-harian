@@ -59,6 +59,7 @@ footer{text-align:center;color:#98a2b3;font-size:10px;padding:24px 0}
     <div class="brand"><div class="logo">Rp</div><div><h1>Dompet Harian</h1><p>Finance dashboard pribadi</p></div></div>
     <div class="actions">
       <button class="btn" onclick="exportData()">Backup</button>
+      <button class="btn" onclick="signOut()">Keluar</button>
       <button class="btn" onclick="document.getElementById('importFile').click()">Restore</button>
       <button class="btn primary" onclick="openModal('expenseModal')">＋ Pengeluaran</button>
       <input id="importFile" type="file" accept="application/json" hidden onchange="importData(event)">
@@ -132,7 +133,7 @@ footer{text-align:center;color:#98a2b3;font-size:10px;padding:24px 0}
  </div>
 </section>
 
-<footer>Dompet Harian • Data tersimpan di perangkat/browser ini</footer>
+<footer>Dompet Harian • Cloud Sync HP ↔ Laptop</footer>
 </div>
 
 <div class="modal" id="expenseModal"><div class="modal-box">
@@ -170,6 +171,32 @@ const totalSpent=(m=month())=>state.expenses.filter(e=>e.expense_date.slice(0,7)
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
 function toast(t){const x=document.getElementById('toast');if(!x)return;x.textContent=t;x.classList.add('show');setTimeout(()=>x.classList.remove('show'),1800)}
+function showTab(id){
+  document.querySelectorAll('section[id]').forEach(s=>s.classList.toggle('active',s.id===id));
+  document.querySelectorAll('.tab[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
+  if(id==='expenses'){ const f=document.getElementById('filterMonth'); if(f&&!f.value)f.value=month(); }
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function openModal(id){
+  const m=document.getElementById(id);
+  if(!m)return;
+  if(id==='expenseModal'){ const d=document.getElementById('eDate'); if(d&&!d.value)d.value=today(); populateSelects(); }
+  m.classList.add('show');
+}
+function closeModal(id){
+  const m=document.getElementById(id);
+  if(m)m.classList.remove('show');
+}
+async function resetAll(){
+  if(!currentUser)return;
+  if(!confirm('Hapus SEMUA kategori, budget, dan transaksi Anda dari cloud? Tindakan ini tidak dapat dibatalkan.'))return;
+  const e=await supabaseClient.from('expenses').delete().eq('user_id',currentUser.id);
+  if(e.error)return toast(e.error.message);
+  const c=await supabaseClient.from('categories').delete().eq('user_id',currentUser.id);
+  if(c.error)return toast(c.error.message);
+  await loadCloud();
+  toast('Semua data berhasil dihapus');
+}
 function showError(t){const x=document.getElementById('authError');x.textContent=t;x.style.display='block'}
 function toggleAuthMode(){authMode=authMode==='login'?'signup':'login';authBtn.textContent=authMode==='login'?'Masuk':'Daftar';switchText.textContent=authMode==='login'?'Belum punya akun?':'Sudah punya akun?';switchBtn.textContent=authMode==='login'?'Daftar':'Masuk';authError.style.display='none'}
 async function authAction(){
