@@ -36,6 +36,20 @@ button,input,select{font:inherit}button{cursor:pointer}
 footer{text-align:center;color:#98a2b3;font-size:10px;padding:24px 0}
 @media(max-width:980px){.grid4{grid-template-columns:repeat(2,1fr)}.layout2,.layout3{grid-template-columns:1fr}.hero-grid{grid-template-columns:1fr}.hero-side{justify-content:flex-start}}
 @media(max-width:600px){.app{padding:10px}.hero{padding:17px;border-radius:21px}.topbar{align-items:flex-start}.actions .btn{padding:8px 9px;font-size:11px}.brand h1{font-size:18px}.hero-main{font-size:31px}.grid4{gap:8px}.card{padding:13px;border-radius:16px}.metric-value{font-size:19px}.row{grid-template-columns:1fr}.chart-box{height:215px}.mini-pill{min-width:115px}.nav{margin:12px 0}.tab{padding:9px 12px;font-size:12px}}
+
+/* Accessibility & visual category improvements */
+:root{--font-scale:1.12}
+body{font-size:calc(16px * var(--font-scale));line-height:1.5}
+.small,.metric-sub,.hero-label,.hero-note,.item-meta,.budget-bottom,.section-head p,.axis,.donut-center span,footer{font-size:calc(12px * var(--font-scale))!important}
+.metric,.legend-row,.budget-top,.budget-info,.field label,.empty,.toast,.insight{font-size:calc(13px * var(--font-scale))!important}
+.item-name,.amount,.budget-top strong{font-size:calc(14px * var(--font-scale))!important}
+.category-dot{width:12px;height:12px;border-radius:50%;display:inline-block;flex:0 0 12px;box-shadow:0 0 0 3px rgba(0,0,0,.04)}
+.category-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border-radius:999px;font-weight:800;font-size:12px;background:#f5f6f8}
+.category-card{border-left:5px solid var(--cat-color,#7658ff)!important}
+.item{transition:transform .15s ease,box-shadow .15s ease}.item:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(16,24,40,.06)}
+.filter-summary{margin:0 0 10px;padding:10px 12px;border-radius:12px;background:#f6f5ff;font-weight:750;font-size:13px}
+.quick-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}.quick-action{padding:14px;border:1px solid var(--line);border-radius:14px;background:#fff;text-align:left;font-weight:800}.quick-action span{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-top:3px}
+@media(max-width:600px){.quick-actions{grid-template-columns:1fr}.item-meta{font-size:12px!important}.small{font-size:12px!important}}
 </style>
 </head>
 <body>
@@ -106,6 +120,12 @@ footer{text-align:center;color:#98a2b3;font-size:10px;padding:24px 0}
     <div class="card"><div class="section-head"><div><h2>Pengeluaran terbaru</h2><p>Transaksi terakhir</p></div><button class="btn" onclick="showTab('expenses')">Semua</button></div><div class="recent-list" id="recentList"></div></div>
     <div class="card"><div class="section-head"><div><h2>Insight</h2><p>Ringkasan otomatis</p></div></div><div id="insights" style="display:grid;gap:8px"></div></div>
   </div>
+
+  <div class="quick-actions">
+    <button class="quick-action" onclick="openModal('expenseModal')">⚡ Catat cepat<span>Tambah pengeluaran sekarang</span></button>
+    <button class="quick-action" onclick="showTab('expenses')">🔎 Telusuri transaksi<span>Filter berdasarkan bulan dan jenis</span></button>
+    <button class="quick-action" onclick="showTab('budget')">🎯 Cek budget<span>Lihat sisa dan progres tiap jenis</span></button>
+  </div>
 </section>
 
 <section id="expenses">
@@ -115,6 +135,7 @@ footer{text-align:center;color:#98a2b3;font-size:10px;padding:24px 0}
    <div class="field"><label>Bulan</label><input id="filterMonth" type="month" onchange="render()"></div>
    <div class="field"><label>Jenis</label><select id="filterCategory" onchange="render()"><option value="">Semua jenis</option></select></div>
   </div>
+  <div id="filterSummary" class="filter-summary"></div>
   <div id="expenseList"></div>
  </div>
 </section>
@@ -265,14 +286,20 @@ async function editCategory(id){
   const {error}=await supabaseClient.from('categories').update({budget:n}).eq('id',id);
   if(error)return toast(error.message);await loadCloud();toast('Budget diperbarui');
 }
+const CHART_COLORS=['#7658ff','#5b8cff','#12b76a','#f79009','#f04438','#14b8a6','#ec4899','#8b5cf6','#06b6d4'];
+function categoryColor(id){const i=state.categories.findIndex(c=>c.id===id);return CHART_COLORS[(i<0?0:i)%CHART_COLORS.length]}
 function populateSelects(){
+  const selectedExpense=eCategory?.value||'';
+  const selectedFilter=filterCategory?.value||'';
   const opts=state.categories.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
   eCategory.innerHTML=opts||'<option value="">Buat jenis dulu</option>';
   filterCategory.innerHTML='<option value="">Semua jenis</option>'+opts;
+  if(selectedExpense && state.categories.some(c=>c.id===selectedExpense)) eCategory.value=selectedExpense;
+  if(selectedFilter && state.categories.some(c=>c.id===selectedFilter)) filterCategory.value=selectedFilter;
 }
 function expenseHTML(e){
-  const c=cat(e.category_id);
-  return `<div class="item"><div class="item-main"><div class="item-name">${esc(e.note||c?.name||'Pengeluaran')}</div><div class="item-meta">${e.expense_date} • ${esc(c?.name||'Jenis dihapus')}</div></div><div style="display:flex;align-items:center;gap:7px"><div class="amount negative">−${rupiah(e.amount)}</div><button class="icon-btn" onclick="deleteExpense('${e.id}')">×</button></div></div>`;
+  const c=cat(e.category_id), color=categoryColor(e.category_id);
+  return `<div class="item" style="border-left:5px solid ${color}"><div class="item-main"><div class="item-name">${esc(e.note||c?.name||'Pengeluaran')}</div><div class="item-meta"><span class="category-badge"><i class="category-dot" style="background:${color}"></i>${esc(c?.name||'Jenis dihapus')}</span> • ${e.expense_date}</div></div><div style="display:flex;align-items:center;gap:7px"><div class="amount negative">−${rupiah(e.amount)}</div><button class="icon-btn" onclick="deleteExpense('${e.id}')">×</button></div></div>`;
 }
 function render(){
   if(!currentUser)return;
@@ -294,9 +321,11 @@ function render(){
   const fm=filterMonth.value||month(),fc=filterCategory.value;
   const list=state.expenses.filter(e=>e.expense_date.slice(0,7)===fm&&(!fc||e.category_id===fc));
   expenseList.innerHTML=list.length?list.map(expenseHTML).join(''):'<div class="empty">Tidak ada transaksi untuk filter ini.</div>';
+  const filterName=fc?(cat(fc)?.name||'Jenis dipilih'):'Semua jenis';
+  filterSummary.textContent=`${list.length} transaksi • ${filterName} • ${fm}`;
   categoryList.innerHTML=state.categories.length?state.categories.map(c=>{
     const x=spent(c.id),rr=c.budget-x;
-    return `<div class="item category-card"><div><div class="item-name">${esc(c.name)}</div><div class="item-meta">Budget ${rupiah(c.budget)} • Terpakai ${rupiah(x)} • Sisa <span class="${rr<0?'negative':'positive'}">${rupiah(rr)}</span></div></div><div class="category-actions"><button class="icon-btn" onclick="editCategory('${c.id}')">✎</button><button class="icon-btn" onclick="deleteCategory('${c.id}')">🗑</button></div></div>`;
+    const color=categoryColor(c.id);return `<div class="item category-card" style="--cat-color:${color}"><div><div class="item-name"><span class="category-dot" style="background:${color};margin-right:8px"></span>${esc(c.name)}</div><div class="item-meta">Budget ${rupiah(c.budget)} • Terpakai ${rupiah(x)} • Sisa <span class="${rr<0?'negative':'positive'}">${rupiah(rr)}</span></div></div><div class="category-actions"><button class="icon-btn" onclick="editCategory('${c.id}')">✎</button><button class="icon-btn" onclick="deleteCategory('${c.id}')">🗑</button></div></div>`;
   }).join(''):'<div class="empty">Belum ada jenis.</div>';
   drawInsights(b,s,t);
 }
@@ -309,7 +338,7 @@ function drawTrend(){
 }
 function drawDonut(){
   const total=totalSpent(),data=state.categories.map(c=>({name:c.name,value:spent(c.id)})).filter(x=>x.value>0).sort((a,b)=>b.value-a.value);
-  const colors=['#7658ff','#5b8cff','#12b76a','#f79009','#f04438','#14b8a6','#ec4899'];let cur=0,parts=[];
+  const colors=CHART_COLORS;let cur=0,parts=[];
   data.forEach((x,i)=>{const a=x.value/total*360;parts.push(`${colors[i%colors.length]} ${cur}deg ${cur+a}deg`);cur+=a});
   donut.style.background=total?`conic-gradient(${parts.join(',')})`:'#e9edf3';donutTotal.textContent=rupiah(total);
   legend.innerHTML=data.slice(0,6).map((x,i)=>`<div class="legend-row"><span class="legend-left"><i class="dot" style="background:${colors[i%colors.length]}"></i>${esc(x.name)}</span><strong>${rupiah(x.value)}</strong></div>`).join('')||'<div class="empty">Belum ada data pengeluaran.</div>';
