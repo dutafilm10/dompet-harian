@@ -73,6 +73,7 @@ body{font-size:calc(16px * var(--font-scale));line-height:1.5}
     <div class="brand"><div class="logo">Rp</div><div><h1>Dompet Harian</h1><p>Finance dashboard pribadi</p></div></div>
     <div class="actions">
       <button class="btn" onclick="exportData()">Backup</button>
+      <button class="btn" onclick="exportExcelReport()">📊 Laporan Excel</button>
       <button class="btn" onclick="signOut()">Keluar</button>
       <button class="btn" onclick="document.getElementById('importFile').click()">Restore</button>
       <button class="btn primary" onclick="openModal('expenseModal')">＋ Pengeluaran</button>
@@ -145,8 +146,12 @@ body{font-size:calc(16px * var(--font-scale));line-height:1.5}
 </section>
 
 <section id="budget">
+ <div class="dashboard-filter">
+   <div><strong>Periode Budget</strong><div class="small">Pilih bulan untuk melihat pemakaian dan sisa budget pada bulan sebelumnya.</div></div>
+   <div class="field"><label>Bulan</label><input id="budgetMonth" type="month" onchange="render()"></div>
+ </div>
  <div class="layout2">
-  <div class="card"><div class="section-head"><div><h2>Jenis pengeluaran & budget</h2><p>Budget bulanan setiap kategori</p></div><button class="btn primary" onclick="openModal('categoryModal')">＋ Jenis</button></div><div id="categoryList" style="display:grid;gap:9px"></div></div>
+  <div class="card"><div class="section-head"><div><h2>Jenis pengeluaran & budget</h2><p id="budgetSubtitle">Budget dan pemakaian per kategori</p></div><button class="btn primary" onclick="openModal('categoryModal')">＋ Jenis</button></div><div id="categoryList" style="display:grid;gap:9px"></div></div>
   <div class="card"><div class="section-head"><div><h2>Aturan aplikasi</h2><p>Sistem pengurangan budget</p></div></div>
    <div class="insight"><div class="spark">💡</div><div><b>Budget otomatis</b>Setiap transaksi langsung mengurangi budget kategori yang dipilih.</div></div>
    <div style="height:8px"></div>
@@ -182,6 +187,7 @@ body{font-size:calc(16px * var(--font-scale));line-height:1.5}
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="config.js"></script>
 <script>
 
@@ -194,6 +200,7 @@ const spent=(id,m=month())=>state.expenses.filter(e=>e.category_id===id&&e.expen
 const totalBudget=()=>state.categories.reduce((a,c)=>a+Number(c.budget),0);
 const totalSpent=(m=month())=>state.expenses.filter(e=>e.expense_date.slice(0,7)===m).reduce((a,e)=>a+Number(e.amount),0);
 const selectedDashboardMonth=()=>document.getElementById('dashboardMonth')?.value||month();
+const selectedBudgetMonth=()=>document.getElementById('budgetMonth')?.value||selectedDashboardMonth();
 const monthLabel=m=>new Date(m+'-01T00:00:00').toLocaleDateString('id-ID',{month:'long',year:'numeric'});
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
@@ -311,6 +318,7 @@ function render(){
   if(!currentUser)return;
   populateSelects();
   const dm=selectedDashboardMonth();
+  const bm=selectedBudgetMonth();
   const b=totalBudget(),s=totalSpent(dm),r=b-s,monthExpenses=state.expenses.filter(e=>e.expense_date.slice(0,7)===dm),t=monthExpenses.reduce((a,e)=>a+Number(e.amount),0),p=b?s/b*100:0;
   heroRemain.textContent=rupiah(r);heroBudget.textContent=rupiah(b);heroSpent.textContent=rupiah(s);heroToday.textContent=rupiah(t);
   heroNote.textContent='☁️ '+(100-Math.min(p,100)).toFixed(0)+'% budget tersedia • '+monthLabel(dm);
@@ -331,8 +339,9 @@ function render(){
   expenseList.innerHTML=list.length?list.map(expenseHTML).join(''):'<div class="empty">Tidak ada transaksi untuk filter ini.</div>';
   const filterName=fc?(cat(fc)?.name||'Jenis dipilih'):'Semua jenis';
   filterSummary.textContent=`${list.length} transaksi • ${filterName} • ${fm}`;
+  budgetSubtitle.textContent='Budget dan pemakaian • '+monthLabel(bm);
   categoryList.innerHTML=state.categories.length?state.categories.map(c=>{
-    const x=spent(c.id,dm),rr=c.budget-x;
+    const x=spent(c.id,bm),rr=c.budget-x;
     const color=categoryColor(c.id);return `<div class="item category-card" style="--cat-color:${color}"><div><div class="item-name"><span class="category-dot" style="background:${color};margin-right:8px"></span>${esc(c.name)}</div><div class="item-meta">Budget ${rupiah(c.budget)} • Terpakai ${rupiah(x)} • Sisa <span class="${rr<0?'negative':'positive'}">${rupiah(rr)}</span></div></div><div class="category-actions"><button class="icon-btn" onclick="editCategory('${c.id}')">✎</button><button class="icon-btn" onclick="deleteCategory('${c.id}')">🗑</button></div></div>`;
   }).join(''):'<div class="empty">Belum ada jenis.</div>';
   drawInsights(b,s,t,dm);
@@ -370,6 +379,63 @@ function drawInsights(b,s,t,dm){
 function exportData(){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download='backup-dompet-harian-cloud.json';a.click();
 }
+
+function exportExcelReport(){
+  if(!window.XLSX){ toast('Library Excel belum siap. Coba refresh halaman.'); return; }
+  const dm=selectedDashboardMonth();
+  const bm=selectedBudgetMonth();
+  const wb=XLSX.utils.book_new();
+  const monthExp=state.expenses.filter(e=>e.expense_date.slice(0,7)===dm);
+  const total=monthExp.reduce((a,e)=>a+Number(e.amount),0);
+  const budget=totalBudget();
+  const byCategory=state.categories.map(c=>{
+    const used=spent(c.id,dm); return {Kategori:c.name,Budget:Number(c.budget)||0,Terpakai:used,Sisa:(Number(c.budget)||0)-used,Persen_Budget:(Number(c.budget)||0)?used/(Number(c.budget)||0):0};
+  });
+  const summary=[
+    ['LAPORAN DOMPET HARIAN'],
+    ['Periode Dashboard',monthLabel(dm)],
+    ['Periode Budget',monthLabel(bm)],
+    [],
+    ['Ringkasan','Nilai'],
+    ['Total Budget',budget],
+    ['Total Pengeluaran',total],
+    ['Sisa Budget',budget-total],
+    ['Jumlah Transaksi',monthExp.length]
+  ];
+  const wsSummary=XLSX.utils.aoa_to_sheet(summary);
+  wsSummary['!cols']=[{wch:28},{wch:24}];
+  XLSX.utils.book_append_sheet(wb,wsSummary,'Ringkasan');
+
+  const tx=[['Tanggal','Jenis Pengeluaran','Keterangan','Jumlah']];
+  [...state.expenses].sort((a,b)=>String(a.expense_date).localeCompare(String(b.expense_date))).forEach(e=>{const c=cat(e.category_id);tx.push([e.expense_date,c?.name||'Jenis dihapus',e.note||'',Number(e.amount)||0]);});
+  const wsTx=XLSX.utils.aoa_to_sheet(tx); wsTx['!cols']=[{wch:14},{wch:24},{wch:42},{wch:18}]; XLSX.utils.book_append_sheet(wb,wsTx,'Semua Transaksi');
+
+  const txPeriod=[['Tanggal','Jenis Pengeluaran','Keterangan','Jumlah']];
+  [...monthExp].sort((a,b)=>String(a.expense_date).localeCompare(String(b.expense_date))).forEach(e=>{const c=cat(e.category_id);txPeriod.push([e.expense_date,c?.name||'Jenis dihapus',e.note||'',Number(e.amount)||0]);});
+  const wsPeriod=XLSX.utils.aoa_to_sheet(txPeriod); wsPeriod['!cols']=[{wch:14},{wch:24},{wch:42},{wch:18}]; XLSX.utils.book_append_sheet(wb,wsPeriod,'Transaksi Periode');
+
+  const budgetRows=[['Kategori','Budget Bulanan','Terpakai ('+monthLabel(bm)+')','Sisa','% Terpakai']];
+  state.categories.forEach(c=>{const used=spent(c.id,bm),b=Number(c.budget)||0;budgetRows.push([c.name,b,used,b-used,b?used/b:0]);});
+  const wsBudget=XLSX.utils.aoa_to_sheet(budgetRows); wsBudget['!cols']=[{wch:26},{wch:18},{wch:24},{wch:18},{wch:14}]; XLSX.utils.book_append_sheet(wb,wsBudget,'Budget');
+
+  const [yy,mm]=dm.split('-').map(Number),days=new Date(yy,mm,0).getDate();
+  const trend=[['Tanggal','Pengeluaran Harian']];
+  for(let d=1;d<=days;d++){const date=`${dm}-${String(d).padStart(2,'0')}`;trend.push([date,state.expenses.filter(e=>e.expense_date===date).reduce((a,e)=>a+Number(e.amount),0)]);}
+  const wsTrend=XLSX.utils.aoa_to_sheet(trend); wsTrend['!cols']=[{wch:16},{wch:24}]; XLSX.utils.book_append_sheet(wb,wsTrend,'Data Grafik Tren');
+
+  const comp=[['Kategori','Pengeluaran','Persentase']];
+  byCategory.filter(x=>x.Terpakai>0).forEach(x=>comp.push([x.Kategori,x.Terpakai,total?x.Terpakai/total:0]));
+  const wsComp=XLSX.utils.aoa_to_sheet(comp); wsComp['!cols']=[{wch:26},{wch:20},{wch:14}]; XLSX.utils.book_append_sheet(wb,wsComp,'Data Grafik Komposisi');
+
+  [wsSummary,wsTx,wsPeriod,wsBudget,wsTrend,wsComp].forEach(ws=>{
+    Object.keys(ws).forEach(k=>{if(k[0]!=='!'){const cell=ws[k]; if(typeof cell.v==='number') cell.z='#,##0';}});
+  });
+  // percentage columns
+  for(let r=2;r<=budgetRows.length;r++){const c=wsBudget['E'+r];if(c)c.z='0.0%';}
+  for(let r=2;r<=comp.length;r++){const c=wsComp['C'+r];if(c)c.z='0.0%';}
+  XLSX.writeFile(wb,`Laporan_Dompet_Harian_${dm}.xlsx`);
+  toast('Laporan Excel berhasil dibuat');
+}
 async function importData(ev){
   const f=ev.target.files[0];if(!f)return;const d=JSON.parse(await f.text());
   if(!Array.isArray(d.categories)||!Array.isArray(d.expenses))return alert('Backup tidak valid.');
@@ -385,11 +451,11 @@ async function init(){
 }
   supabaseClient=window.supabase.createClient(window.SUPABASE_URL,window.SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   supabaseClient.auth.onAuthStateChange(async(_e,s)=>{
-    if(s?.user){currentUser=s.user;loginView.style.display='none';app.style.display='block';filterMonth.value=month();dashboardMonth.value=month();await loadCloud();subscribeRealtime();}
+    if(s?.user){currentUser=s.user;loginView.style.display='none';app.style.display='block';filterMonth.value=month();dashboardMonth.value=month();budgetMonth.value=month();await loadCloud();subscribeRealtime();}
     else{currentUser=null;app.style.display='none';loginView.style.display='flex';}
   });
   const {data}=await supabaseClient.auth.getSession();
-  if(data.session){currentUser=data.session.user;loginView.style.display='none';app.style.display='block';filterMonth.value=month();dashboardMonth.value=month();await loadCloud();subscribeRealtime();}
+  if(data.session){currentUser=data.session.user;loginView.style.display='none';app.style.display='block';filterMonth.value=month();dashboardMonth.value=month();budgetMonth.value=month();await loadCloud();subscribeRealtime();}
 }
 init();
 
