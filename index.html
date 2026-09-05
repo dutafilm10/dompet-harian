@@ -47,7 +47,7 @@ body{font-size:calc(16px * var(--font-scale));line-height:1.5}
 .category-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border-radius:999px;font-weight:800;font-size:12px;background:#f5f6f8}
 .category-card{border-left:5px solid var(--cat-color,#7658ff)!important}
 .item{transition:transform .15s ease,box-shadow .15s ease}.item:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(16,24,40,.06)}
-.filter-summary{margin:0 0 10px;padding:10px 12px;border-radius:12px;background:#f6f5ff;font-weight:750;font-size:13px}.dashboard-filter{display:flex;align-items:end;justify-content:space-between;gap:12px;margin:0 0 14px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fbfbff}.dashboard-filter .field{max-width:220px}.chart-note{font-size:12px;color:var(--muted);margin-top:8px}.chart-svg text{fill:#748095;font-size:12px;font-family:Arial,sans-serif}.chart-grid{stroke:#e7eaf0;stroke-width:1}.chart-axis{stroke:#cbd2dc;stroke-width:1}.chart-area{fill:rgba(118,88,255,.10)}
+.filter-summary{margin:0 0 10px;padding:10px 12px;border-radius:12px;background:#f6f5ff;font-weight:750;font-size:13px}.dashboard-filter{display:flex;align-items:end;justify-content:space-between;gap:12px;margin:0 0 14px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fbfbff}.dashboard-filter .field{max-width:220px}.chart-note{font-size:12px;color:var(--muted);margin-top:8px}.chart-tooltip{position:absolute;z-index:10;display:none;pointer-events:none;min-width:180px;background:#101828;color:#fff;padding:10px 12px;border-radius:12px;box-shadow:0 12px 28px rgba(16,24,40,.25);font-size:12px}.chart-tooltip.show{display:block}.chart-tooltip b{display:block;font-size:13px;margin-bottom:3px}.chart-hit{fill:transparent;cursor:pointer;touch-action:manipulation}.chart-dot{cursor:pointer;touch-action:manipulation}.legend-row{cursor:pointer;padding:8px;border-radius:10px;transition:.15s;touch-action:manipulation}.legend-row:active,.legend-row:hover{background:#f5f3ff}.donut{cursor:pointer;touch-action:manipulation}.chart-detail-card{margin-top:10px;padding:10px 12px;border-radius:12px;background:#f6f5ff;border:1px solid #e9e4ff;font-size:13px}.chart-detail-card b{display:block}.chart-svg text{fill:#748095;font-size:12px;font-family:Arial,sans-serif}.chart-grid{stroke:#e7eaf0;stroke-width:1}.chart-axis{stroke:#cbd2dc;stroke-width:1}.chart-area{fill:rgba(118,88,255,.10)}
 .quick-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}.quick-action{padding:14px;border:1px solid var(--line);border-radius:14px;background:#fff;text-align:left;font-weight:800}.quick-action span{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-top:3px}
 @media(max-width:600px){.quick-actions{grid-template-columns:1fr}.item-meta{font-size:12px!important}.small{font-size:12px!important}}
 </style>
@@ -111,7 +111,7 @@ body{font-size:calc(16px * var(--font-scale));line-height:1.5}
   <div class="layout2">
     <div class="card">
       <div class="section-head"><div><h2>Tren pengeluaran</h2><p id="trendSubtitle">Pengeluaran harian</p></div><span class="small" id="trendTotal">Rp0</span></div>
-      <div class="chart-box" id="trendChart"></div><div class="chart-note">Arahkan kursor/tahan titik grafik untuk melihat tanggal dan nominal.</div>
+      <div class="chart-box" id="trendChart"></div><div id="trendDetail" class="chart-detail-card">👆 Klik titik grafik atau sentuh grafik untuk melihat detail tanggal dan nominal.</div><div class="chart-note">PC: arahkan/klik • HP: sentuh titik atau area grafik.</div>
     </div>
     <div class="card">
       <div class="section-head"><div><h2>Komposisi pengeluaran</h2><p>Ke mana uang paling banyak pergi</p></div></div>
@@ -348,26 +348,34 @@ function render(){
 }
 function drawTrend(dm){
   const box=document.getElementById('trendChart');
+  const detail=document.getElementById('trendDetail');
   const [yy,mm]=dm.split('-').map(Number),days=new Date(yy,mm,0).getDate(),vals=[];
   for(let d=1;d<=days;d++){const day=`${dm}-${String(d).padStart(2,'0')}`;vals.push(state.expenses.filter(e=>e.expense_date===day).reduce((a,e)=>a+Number(e.amount),0))}
   const W=760,H=290,p={l:78,r:18,t:22,b:46},max=Math.max(...vals,1),iw=W-p.l-p.r,ih=H-p.t-p.b;
   const niceMax=Math.ceil(max/100000)*100000||1;
   const pts=vals.map((v,i)=>[p.l+i*(iw/Math.max(days-1,1)),p.t+ih-v/niceMax*ih]);
   const line=pts.map((q,i)=>(i?'L':'M')+q[0].toFixed(1)+' '+q[1].toFixed(1)).join(' ');
-  const area=`M ${pts[0][0]} ${p.t+ih} `+pts.map((q,i)=>(i?'L':'L')+q[0].toFixed(1)+' '+q[1].toFixed(1)).join(' ') + ` L ${pts[pts.length-1][0]} ${p.t+ih} Z`;
+  const area=`M ${pts[0][0]} ${p.t+ih} `+pts.map((q,i)=>'L'+q[0].toFixed(1)+' '+q[1].toFixed(1)).join(' ') + ` L ${pts[pts.length-1][0]} ${p.t+ih} Z`;
   const yTicks=[0,.25,.5,.75,1].map(q=>({q,val:niceMax*q,y:p.t+ih-q*ih}));
   const xDays=[1,Math.ceil(days*.25),Math.ceil(days*.5),Math.ceil(days*.75),days].filter((v,i,a)=>a.indexOf(v)===i);
-  const grid=yTicks.map(t=>`<line x1="${p.l}" x2="${W-p.r}" y1="${t.y}" y2="${t.y}" class="chart-grid"/><text x="${p.l-8}" y="${t.y+4}" text-anchor="end">${rupiah(t.val).replace('Rp','Rp ')}</text>`).join('');
+  const grid=yTicks.map(t=>`<line x1="${p.l}" x2="${W-p.r}" y1="${t.y}" y2="${t.y}" class="chart-grid"/><text x="${p.l-8}" y="${t.y+4}" text-anchor="end">${rupiah(t.val)}</text>`).join('');
   const xLabels=xDays.map(d=>{const x=pts[d-1][0],date=`${String(d).padStart(2,'0')}/${String(mm).padStart(2,'0')}`;return `<text x="${x}" y="${H-16}" text-anchor="middle">${date}</text>`}).join('');
-  const dots=pts.map((q,i)=>vals[i]?`<g><title>${String(i+1).padStart(2,'0')} ${monthLabel(dm)}: ${rupiah(vals[i])}</title><circle cx="${q[0]}" cy="${q[1]}" r="5" class="chart-dot"/></g>`:'').join('');
+  const dots=pts.map((q,i)=>`<circle data-day="${i}" cx="${q[0]}" cy="${q[1]}" r="${vals[i]?7:10}" class="chart-hit"/><circle data-day="${i}" cx="${q[0]}" cy="${q[1]}" r="${vals[i]?5:0}" class="chart-dot"/>`).join('');
   box.innerHTML=`<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}<line x1="${p.l}" x2="${W-p.r}" y1="${p.t+ih}" y2="${p.t+ih}" class="chart-axis"/><path d="${area}" class="chart-area"/><path d="${line}" class="chart-line"/>${dots}${xLabels}</svg>`;
+  function showDay(i){const date=`${String(i+1).padStart(2,'0')} ${monthLabel(dm)}`;const tx=state.expenses.filter(e=>e.expense_date===`${dm}-${String(i+1).padStart(2,'0')}`);detail.innerHTML=`<b>📅 ${date}</b>💰 Total: <strong>${rupiah(vals[i])}</strong><br>🧾 ${tx.length} transaksi`}
+  box.querySelectorAll('[data-day]').forEach(el=>{const i=Number(el.dataset.day);el.addEventListener('click',()=>showDay(i));el.addEventListener('touchstart',e=>{e.preventDefault();showDay(i)},{passive:false});});
 }
 function drawDonut(dm){
   const total=totalSpent(dm),data=state.categories.map(c=>({id:c.id,name:c.name,value:spent(c.id,dm)})).filter(x=>x.value>0).sort((a,b)=>b.value-a.value);
-  let cur=0,parts=[];
-  data.forEach(x=>{const a=x.value/total*360,color=categoryColor(x.id);parts.push(`${color} ${cur}deg ${cur+a}deg`);cur+=a});
+  let cur=0,parts=[]; const ranges=[];
+  data.forEach(x=>{const a=x.value/total*360,color=categoryColor(x.id);parts.push(`${color} ${cur}deg ${cur+a}deg`);ranges.push({...x,start:cur,end:cur+a,color});cur+=a});
   donut.style.background=total?`conic-gradient(${parts.join(',')})`:'#e9edf3';donutTotal.textContent=rupiah(total);
-  legend.innerHTML=data.slice(0,8).map(x=>`<div class="legend-row"><span class="legend-left"><i class="dot" style="background:${categoryColor(x.id)}"></i>${esc(x.name)}</span><strong>${rupiah(x.value)}</strong></div>`).join('')||'<div class="empty">Belum ada data pengeluaran pada periode ini.</div>';
+  const detail=document.getElementById('donutDetail');
+  function showCat(x){detail.innerHTML=`<b><span class="category-dot" style="background:${x.color};margin-right:7px"></span>${esc(x.name)}</b>💰 Total: <strong>${rupiah(x.value)}</strong><br>📊 ${(x.value/total*100).toFixed(1)}% dari total periode`}
+  legend.innerHTML=data.slice(0,8).map(x=>`<div class="legend-row" data-cat="${x.id}"><span class="legend-left"><i class="dot" style="background:${categoryColor(x.id)}"></i>${esc(x.name)}</span><strong>${rupiah(x.value)}</strong></div>`).join('')||'<div class="empty">Belum ada data pengeluaran pada periode ini.</div>';
+  legend.querySelectorAll('[data-cat]').forEach(el=>{const x=ranges.find(a=>a.id===el.dataset.cat);el.addEventListener('click',()=>showCat(x));el.addEventListener('touchstart',e=>{e.preventDefault();showCat(x)},{passive:false});});
+  donut.onclick=e=>{if(!total||!ranges.length)return;const r=donut.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy;let ang=(Math.atan2(dy,dx)*180/Math.PI+90+360)%360;const x=ranges.find(a=>ang>=a.start&&ang<a.end);if(x)showCat(x)};
+  donut.ontouchstart=e=>{const t=e.touches[0];if(!t)return;const r=donut.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=t.clientX-cx,dy=t.clientY-cy;let ang=(Math.atan2(dy,dx)*180/Math.PI+90+360)%360;const x=ranges.find(a=>ang>=a.start&&ang<a.end);if(x){e.preventDefault();showCat(x)}},{passive:false};
 }
 function drawInsights(b,s,t,dm){
   const d=state.categories.map(c=>({c,x:spent(c.id,dm)})).filter(x=>x.x>0).sort((a,b)=>b.x-a.x),top=d[0],p=b?s/b*100:0;let a=[];
