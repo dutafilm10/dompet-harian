@@ -187,7 +187,7 @@ body{font-size:calc(16px * var(--font-scale));line-height:1.5}
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script src="config.js"></script>
 <script>
 
@@ -390,59 +390,71 @@ function exportData(){
 
 function exportExcelReport(){
   if(!window.XLSX){ toast('Library Excel belum siap. Coba refresh halaman.'); return; }
-  const dm=selectedDashboardMonth();
-  const bm=selectedBudgetMonth();
+  const dm=selectedDashboardMonth(), bm=selectedBudgetMonth();
   const wb=XLSX.utils.book_new();
-  const monthExp=state.expenses.filter(e=>e.expense_date.slice(0,7)===dm);
-  const total=monthExp.reduce((a,e)=>a+Number(e.amount),0);
-  const budget=totalBudget();
-  const byCategory=state.categories.map(c=>{
-    const used=spent(c.id,dm); return {Kategori:c.name,Budget:Number(c.budget)||0,Terpakai:used,Sisa:(Number(c.budget)||0)-used,Persen_Budget:(Number(c.budget)||0)?used/(Number(c.budget)||0):0};
-  });
-  const summary=[
-    ['LAPORAN DOMPET HARIAN'],
-    ['Periode Dashboard',monthLabel(dm)],
-    ['Periode Budget',monthLabel(bm)],
-    [],
-    ['Ringkasan','Nilai'],
-    ['Total Budget',budget],
-    ['Total Pengeluaran',total],
-    ['Sisa Budget',budget-total],
-    ['Jumlah Transaksi',monthExp.length]
-  ];
-  const wsSummary=XLSX.utils.aoa_to_sheet(summary);
-  wsSummary['!cols']=[{wch:28},{wch:24}];
-  XLSX.utils.book_append_sheet(wb,wsSummary,'Ringkasan');
+  const exp=state.expenses.filter(e=>String(e.expense_date).slice(0,7)===dm);
+  const total=exp.reduce((a,e)=>a+(Number(e.amount)||0),0);
+  const budget=totalBudget(), remain=budget-total;
+  const cats=state.categories.map(c=>{const b=Number(c.budget)||0,u=spent(c.id,dm);return {name:c.name,b,u,s:b-u,p:b?u/b:0};});
+  const money='#,##0';
+  const colors=['5B8CFF','7C5CFF','12B76A','F79009','F04438','14B8A6','EC4899','64748B'];
+  const title={font:{bold:true,sz:22,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'0B1020'}},alignment:{horizontal:'center',vertical:'center'}};
+  const section={font:{bold:true,color:{rgb:'FFFFFF'},sz:12},fill:{fgColor:{rgb:'161D33'}},alignment:{horizontal:'left',vertical:'center'}};
+  const head={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'475467'}},alignment:{horizontal:'center',vertical:'center'},border:{bottom:{style:'thin',color:{rgb:'CBD5E1'}}}};
+  const thin={top:{style:'thin',color:{rgb:'E2E8F0'}},bottom:{style:'thin',color:{rgb:'E2E8F0'}},left:{style:'thin',color:{rgb:'E2E8F0'}},right:{style:'thin',color:{rgb:'E2E8F0'}}};
+  function cell(ws,a,v,style={}){ws[a]={v,t:typeof v==='number'?'n':'s',s:style};}
+  function zebra(ws,range,cols){for(let r=range[0];r<=range[1];r++)for(let c=0;c<cols;c++){const a=XLSX.utils.encode_cell({r:r-1,c});if(ws[a])ws[a].s={...(ws[a].s||{}),border:thin,fill:{fgColor:{rgb:r%2?'FFFFFF':'F8FAFC'}}};}}
 
-  const tx=[['Tanggal','Jenis Pengeluaran','Keterangan','Jumlah']];
-  [...state.expenses].sort((a,b)=>String(a.expense_date).localeCompare(String(b.expense_date))).forEach(e=>{const c=cat(e.category_id);tx.push([e.expense_date,c?.name||'Jenis dihapus',e.note||'',Number(e.amount)||0]);});
-  const wsTx=XLSX.utils.aoa_to_sheet(tx); wsTx['!cols']=[{wch:14},{wch:24},{wch:42},{wch:18}]; XLSX.utils.book_append_sheet(wb,wsTx,'Semua Transaksi');
+  // DASHBOARD
+  const dash=[]; for(let i=0;i<32;i++)dash.push([]);
+  const wsD=XLSX.utils.aoa_to_sheet(dash);
+  wsD['!cols']=[{wch:4},{wch:24},{wch:18},{wch:18},{wch:4},{wch:24},{wch:18},{wch:18}];
+  wsD['!rows']=[{hpt:32},{hpt:30},{hpt:28},{hpt:8},{hpt:28},{hpt:28},{hpt:8},{hpt:28},{hpt:26},{hpt:26},{hpt:8},{hpt:26}];
+  wsD['!merges']=[XLSX.utils.decode_range('B2:G2'),XLSX.utils.decode_range('B3:G3'),XLSX.utils.decode_range('B5:C5'),XLSX.utils.decode_range('D5:E5'),XLSX.utils.decode_range('F5:G5'),XLSX.utils.decode_range('B8:G8'),XLSX.utils.decode_range('B9:G9'),XLSX.utils.decode_range('B14:G14')];
+  cell(wsD,'B2','DOMPET HARIAN — PROFESSIONAL FINANCE REPORT',title);
+  cell(wsD,'B3','Periode laporan: '+monthLabel(dm)+'  •  Dibuat otomatis dari aplikasi', {font:{italic:true,color:{rgb:'475467'}},alignment:{horizontal:'center'}});
+  [['B5','TOTAL BUDGET',budget,'5B8CFF'],['D5','TOTAL PENGELUARAN',total,'F04438'],['F5','SISA BUDGET',remain,remain>=0?'12B76A':'F79009']].forEach(([a,label,val,col])=>{cell(wsD,a,label,{font:{bold:true,color:{rgb:'FFFFFF'},sz:10},fill:{fgColor:{rgb:col}},alignment:{horizontal:'center'}});const next=XLSX.utils.encode_cell({r:XLSX.utils.decode_cell(a).r+1,c:XLSX.utils.decode_cell(a).c});cell(wsD,next,val,{font:{bold:true,sz:18,color:{rgb:col}},alignment:{horizontal:'center'},numFmt:money,fill:{fgColor:{rgb:'F8FAFC'}},border:thin});});
+  cell(wsD,'B8','RINGKASAN UTAMA',section);
+  const top=[...cats].sort((a,b)=>b.u-a.u)[0], largest=[...exp].sort((a,b)=>b.amount-a.amount)[0];
+  const metrics=[['Jumlah Transaksi',exp.length],['Kategori Terbesar',top?top.name:'-'],['Pengeluaran Terbesar',largest?Number(largest.amount):0],['% Budget Terpakai',budget?total/budget:0]];
+  metrics.forEach((x,i)=>{const r=10+i*2;cell(wsD,'B'+r,x[0],{font:{bold:true,color:{rgb:'475467'}},fill:{fgColor:{rgb:'F8FAFC'}},border:thin});cell(wsD,'C'+r,x[1],{font:{bold:true,sz:13},border:thin,numFmt:i===2?money:i===3?'0.0%':'General'});});
+  cell(wsD,'B14','STATUS KATEGORI & PENGGUNAAN BUDGET',section);
+  cell(wsD,'B16','Kategori',head);cell(wsD,'C16','Budget',head);cell(wsD,'D16','Terpakai',head);cell(wsD,'E16','Sisa',head);cell(wsD,'F16','% Terpakai',head);cell(wsD,'G16','Status',head);
+  cats.forEach((x,i)=>{const r=17+i;const status=x.b===0?'Belum ada budget':x.p>1?'MELEBIHI':x.p>=.8?'WASPADA':'AMAN';const fill=status==='AMAN'?'DCFCE7':status==='WASPADA'?'FEF3C7':status==='MELEBIHI'?'FEE2E2':'E2E8F0';[['B',x.name],['C',x.b],['D',x.u],['E',x.s],['F',x.p],['G',status]].forEach(([col,v])=>cell(wsD,col+r,v,{border:thin,fill:{fgColor:{rgb:col==='G'?fill:(i%2?'F8FAFC':'FFFFFF')}},font:{bold:col==='G'},numFmt:['C','D','E'].includes(col)?money:col==='F'?'0.0%':'General'}));});
+  XLSX.utils.book_append_sheet(wb,wsD,'Dashboard');
 
-  const txPeriod=[['Tanggal','Jenis Pengeluaran','Keterangan','Jumlah']];
-  [...monthExp].sort((a,b)=>String(a.expense_date).localeCompare(String(b.expense_date))).forEach(e=>{const c=cat(e.category_id);txPeriod.push([e.expense_date,c?.name||'Jenis dihapus',e.note||'',Number(e.amount)||0]);});
-  const wsPeriod=XLSX.utils.aoa_to_sheet(txPeriod); wsPeriod['!cols']=[{wch:14},{wch:24},{wch:42},{wch:18}]; XLSX.utils.book_append_sheet(wb,wsPeriod,'Transaksi Periode');
+  // BUDGET ANALYSIS
+  const br=[['ANALISIS BUDGET — '+monthLabel(bm)],[],['Kategori','Budget','Terpakai','Sisa','% Terpakai','Status']];
+  state.categories.forEach(c=>{const b=Number(c.budget)||0,u=spent(c.id,bm),p=b?u/b:0;br.push([c.name,b,u,b-u,p,p>1?'MELEBIHI':p>=.8?'WASPADA':'AMAN']);});
+  const wsB=XLSX.utils.aoa_to_sheet(br);wsB['!cols']=[{wch:28},{wch:18},{wch:18},{wch:18},{wch:15},{wch:18}];wsB['!merges']=[XLSX.utils.decode_range('A1:F1')];wsB['A1'].s=title;wsB['!rows']=[{hpt:30}];
+  for(let c=0;c<6;c++)wsB[XLSX.utils.encode_cell({r:2,c})].s=head;
+  for(let r=3;r<br.length;r++){for(let c=0;c<6;c++){const a=XLSX.utils.encode_cell({r,c});if(wsB[a])wsB[a].s={border:thin,fill:{fgColor:{rgb:r%2?'F8FAFC':'FFFFFF'}},numFmt:[1,2,3].includes(c)?money:c===4?'0.0%':'General'};}const st=wsB['F'+(r+1)].v,fc=st==='AMAN'?'DCFCE7':st==='WASPADA'?'FEF3C7':'FEE2E2';wsB['F'+(r+1)].s.fill={fgColor:{rgb:fc}};wsB['F'+(r+1)].s.font={bold:true};}
+  XLSX.utils.book_append_sheet(wb,wsB,'Analisis Budget');
 
-  const budgetRows=[['Kategori','Budget Bulanan','Terpakai ('+monthLabel(bm)+')','Sisa','% Terpakai']];
-  state.categories.forEach(c=>{const used=spent(c.id,bm),b=Number(c.budget)||0;budgetRows.push([c.name,b,used,b-used,b?used/b:0]);});
-  const wsBudget=XLSX.utils.aoa_to_sheet(budgetRows); wsBudget['!cols']=[{wch:26},{wch:18},{wch:24},{wch:18},{wch:14}]; XLSX.utils.book_append_sheet(wb,wsBudget,'Budget');
-
+  // DAILY TREND
   const [yy,mm]=dm.split('-').map(Number),days=new Date(yy,mm,0).getDate();
-  const trend=[['Tanggal','Pengeluaran Harian']];
-  for(let d=1;d<=days;d++){const date=`${dm}-${String(d).padStart(2,'0')}`;trend.push([date,state.expenses.filter(e=>e.expense_date===date).reduce((a,e)=>a+Number(e.amount),0)]);}
-  const wsTrend=XLSX.utils.aoa_to_sheet(trend); wsTrend['!cols']=[{wch:16},{wch:24}]; XLSX.utils.book_append_sheet(wb,wsTrend,'Data Grafik Tren');
+  const tr=[['TREN PENGELUARAN HARIAN — '+monthLabel(dm)],[],['Tanggal','Hari','Jumlah Transaksi','Total Pengeluaran','Visual']];
+  for(let d=1;d<=days;d++){const date=`${dm}-${String(d).padStart(2,'0')}`,arr=exp.filter(e=>e.expense_date===date),v=arr.reduce((a,e)=>a+Number(e.amount),0);tr.push([date,new Date(date+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long'}),arr.length,v,'']);}
+  const wsT=XLSX.utils.aoa_to_sheet(tr);wsT['!cols']=[{wch:15},{wch:14},{wch:18},{wch:22},{wch:45}];wsT['!merges']=[XLSX.utils.decode_range('A1:E1')];wsT['A1'].s=title;for(let c=0;c<5;c++)wsT[XLSX.utils.encode_cell({r:2,c})].s=head;
+  const max=Math.max(1,...tr.slice(3).map(x=>x[3]));for(let r=4;r<=tr.length;r++){const val=wsT['D'+r].v||0,bars='█'.repeat(Math.round((val/max)*28));wsT['E'+r]={v:bars,t:'s',s:{font:{color:{rgb:'5B8CFF'}},border:thin,fill:{fgColor:{rgb:r%2?'F8FAFC':'FFFFFF'}}}};for(let c=0;c<4;c++){const a=XLSX.utils.encode_cell({r:r-1,c});if(wsT[a])wsT[a].s={border:thin,fill:{fgColor:{rgb:r%2?'F8FAFC':'FFFFFF'}},numFmt:c===3?money:'General'};}}
+  XLSX.utils.book_append_sheet(wb,wsT,'Tren Harian');
 
-  const comp=[['Kategori','Pengeluaran','Persentase']];
-  byCategory.filter(x=>x.Terpakai>0).forEach(x=>comp.push([x.Kategori,x.Terpakai,total?x.Terpakai/total:0]));
-  const wsComp=XLSX.utils.aoa_to_sheet(comp); wsComp['!cols']=[{wch:26},{wch:20},{wch:14}]; XLSX.utils.book_append_sheet(wb,wsComp,'Data Grafik Komposisi');
+  // CATEGORY ANALYSIS
+  const cr=[['ANALISIS KATEGORI — '+monthLabel(dm)],[],['No','Kategori','Total Pengeluaran','% Komposisi','Visual']];
+  const used=cats.filter(x=>x.u>0).sort((a,b)=>b.u-a.u);used.forEach((x,i)=>cr.push([i+1,x.name,x.u,total?x.u/total:0,'']));
+  const wsC=XLSX.utils.aoa_to_sheet(cr);wsC['!cols']=[{wch:8},{wch:28},{wch:22},{wch:16},{wch:40}];wsC['!merges']=[XLSX.utils.decode_range('A1:E1')];wsC['A1'].s=title;for(let c=0;c<5;c++)wsC[XLSX.utils.encode_cell({r:2,c})].s=head;
+  const mx=Math.max(1,...used.map(x=>x.u));used.forEach((x,i)=>{const r=4+i,bars='█'.repeat(Math.round(x.u/mx*24));wsC['E'+r]={v:bars,t:'s',s:{font:{color:{rgb:colors[i%colors.length]}},border:thin}};for(let c=0;c<4;c++){const a=XLSX.utils.encode_cell({r:r-1,c});if(wsC[a])wsC[a].s={border:thin,fill:{fgColor:{rgb:r%2?'F8FAFC':'FFFFFF'}},numFmt:c===2?money:c===3?'0.0%':'General'};}});
+  XLSX.utils.book_append_sheet(wb,wsC,'Analisis Kategori');
 
-  [wsSummary,wsTx,wsPeriod,wsBudget,wsTrend,wsComp].forEach(ws=>{
-    Object.keys(ws).forEach(k=>{if(k[0]!=='!'){const cell=ws[k]; if(typeof cell.v==='number') cell.z='#,##0';}});
-  });
-  // percentage columns
-  for(let r=2;r<=budgetRows.length;r++){const c=wsBudget['E'+r];if(c)c.z='0.0%';}
-  for(let r=2;r<=comp.length;r++){const c=wsComp['C'+r];if(c)c.z='0.0%';}
-  XLSX.writeFile(wb,`Laporan_Dompet_Harian_${dm}.xlsx`);
-  toast('Laporan Excel berhasil dibuat');
+  // DETAIL TRANSACTIONS
+  const tx=[['DETAIL TRANSAKSI — '+monthLabel(dm)],[],['No','Tanggal','Hari','Kategori','Keterangan','Nominal']];
+  [...exp].sort((a,b)=>String(a.expense_date).localeCompare(String(b.expense_date))).forEach((e,i)=>tx.push([i+1,e.expense_date,new Date(e.expense_date+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long'}),cat(e.category_id)?.name||'Jenis dihapus',e.note||'',Number(e.amount)||0]));
+  const wsX=XLSX.utils.aoa_to_sheet(tx);wsX['!cols']=[{wch:8},{wch:15},{wch:14},{wch:25},{wch:42},{wch:20}];wsX['!merges']=[XLSX.utils.decode_range('A1:F1')];wsX['A1'].s=title;for(let c=0;c<6;c++)wsX[XLSX.utils.encode_cell({r:2,c})].s=head;
+  for(let r=4;r<=tx.length;r++)for(let c=0;c<6;c++){const a=XLSX.utils.encode_cell({r:r-1,c});if(wsX[a])wsX[a].s={border:thin,fill:{fgColor:{rgb:r%2?'F8FAFC':'FFFFFF'}},alignment:{vertical:'top',wrapText:c===4},numFmt:c===5?money:'General'};}
+  wsX['!autofilter']={ref:'A3:F'+Math.max(3,tx.length)};XLSX.utils.book_append_sheet(wb,wsX,'Detail Transaksi');
+
+  XLSX.writeFile(wb,`Laporan_Profesional_Dompet_Harian_${dm}.xlsx`);
+  toast('Laporan Excel profesional berhasil dibuat');
 }
 async function importData(ev){
   const f=ev.target.files[0];if(!f)return;const d=JSON.parse(await f.text());
