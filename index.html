@@ -167,13 +167,12 @@ body{font-size:calc(16px * var(--font-scale));line-height:1.5}
 </div>
 
 <div class="modal" id="expenseModal"><div class="modal-box">
- <div class="modal-head"><h2 id="expenseModalTitle">Tambah Pengeluaran</h2><button class="close" onclick="closeModal('expenseModal')">×</button></div>
+ <div class="modal-head"><h2>Tambah Pengeluaran</h2><button class="close" onclick="closeModal('expenseModal')">×</button></div>
  <form class="form-grid" onsubmit="saveExpense(event)">
-  <input id="eId" type="hidden">
   <div class="row"><div class="field"><label>Tanggal</label><input id="eDate" type="date" required></div><div class="field"><label>Jumlah (Rp)</label><input id="eAmount" type="number" min="1" step="1" placeholder="50000" required></div></div>
   <div class="field"><label>Jenis pengeluaran</label><select id="eCategory" required></select></div>
   <div class="field"><label>Keterangan</label><input id="eNote" maxlength="100" placeholder="Contoh: makan siang"></div>
-  <button id="expenseSubmit" class="btn primary" type="submit">Simpan Pengeluaran</button>
+  <button class="btn primary" type="submit">Simpan Pengeluaran</button>
  </form>
 </div></div>
 
@@ -188,13 +187,7 @@ body{font-size:calc(16px * var(--font-scale));line-height:1.5}
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-window.__loadExcelJS=function(){
- if(window.ExcelJS)return Promise.resolve(window.ExcelJS);
- const urls=['https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js','https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js','https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'];
- return new Promise((resolve,reject)=>{let i=0;function next(){if(window.ExcelJS)return resolve(window.ExcelJS);if(i>=urls.length)return reject(new Error('ExcelJS gagal dimuat'));const s=document.createElement('script');s.src=urls[i++];s.onload=()=>window.ExcelJS?resolve(window.ExcelJS):next();s.onerror=next;document.head.appendChild(s)}next()});
-};
-</script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script src="config.js"></script>
 <script>
 
@@ -221,14 +214,7 @@ function showTab(id){
 function openModal(id){
   const m=document.getElementById(id);
   if(!m)return;
-  if(id==='expenseModal'){
-    document.getElementById('eId').value='';
-    document.getElementById('expenseModalTitle').textContent='Tambah Pengeluaran';
-    document.getElementById('expenseSubmit').textContent='Simpan Pengeluaran';
-    const d=document.getElementById('eDate'); if(d)d.value=today();
-    document.getElementById('eAmount').value='';document.getElementById('eNote').value='';
-    populateSelects();
-  }
+  if(id==='expenseModal'){ const d=document.getElementById('eDate'); if(d&&!d.value)d.value=today(); populateSelects(); }
   m.classList.add('show');
 }
 function closeModal(id){
@@ -281,28 +267,13 @@ function subscribeRealtime(){
 async function saveExpense(ev){
   ev.preventDefault();
   const c=eCategory.value;if(!c)return;
-  const id=document.getElementById('eId').value;
-  const payload={category_id:c,expense_date:eDate.value,amount:Number(eAmount.value),note:eNote.value.trim()};
-  let r;
-  if(id){ r=await supabaseClient.from('expenses').update(payload).eq('id',id).eq('user_id',currentUser.id); }
-  else { r=await supabaseClient.from('expenses').insert({...payload,user_id:currentUser.id}); }
-  if(r.error)return toast(r.error.message);
-  closeModal('expenseModal');document.getElementById('eId').value='';eAmount.value='';eNote.value='';
-  toast(id?'Transaksi diperbarui':'Tersimpan ke cloud');await loadCloud();
+  const {error}=await supabaseClient.from('expenses').insert({
+    user_id:currentUser.id,category_id:c,expense_date:eDate.value,
+    amount:Number(eAmount.value),note:eNote.value.trim()
+  });
+  if(error)return toast(error.message);
+  closeModal('expenseModal');eAmount.value='';eNote.value='';toast('Tersimpan ke cloud');await loadCloud();
 }
-async function editExpense(id){
-  const e=state.expenses.find(x=>x.id===id); if(!e)return;
-  populateSelects();
-  document.getElementById('eId').value=e.id;
-  document.getElementById('eDate').value=e.expense_date;
-  document.getElementById('eAmount').value=e.amount;
-  document.getElementById('eCategory').value=e.category_id;
-  document.getElementById('eNote').value=e.note||'';
-  document.getElementById('expenseModalTitle').textContent='Edit Pengeluaran';
-  document.getElementById('expenseSubmit').textContent='Simpan Perubahan';
-  document.getElementById('expenseModal').classList.add('show');
-}
-
 async function saveCategory(ev){
   ev.preventDefault();
   const {error}=await supabaseClient.from('categories').insert({
@@ -341,7 +312,7 @@ function populateSelects(){
 }
 function expenseHTML(e){
   const c=cat(e.category_id), color=categoryColor(e.category_id);
-  return `<div class="item" style="border-left:5px solid ${color}"><div class="item-main"><div class="item-name">${esc(e.note||c?.name||'Pengeluaran')}</div><div class="item-meta"><span class="category-badge"><i class="category-dot" style="background:${color}"></i>${esc(c?.name||'Jenis dihapus')}</span> • ${e.expense_date}</div></div><div style="display:flex;align-items:center;gap:7px"><div class="amount negative">−${rupiah(e.amount)}</div><button class="icon-btn" title="Edit transaksi" onclick="editExpense('${e.id}')">✎</button><button class="icon-btn" title="Hapus transaksi" onclick="deleteExpense('${e.id}')">×</button></div></div>`;
+  return `<div class="item" style="border-left:5px solid ${color}"><div class="item-main"><div class="item-name">${esc(e.note||c?.name||'Pengeluaran')}</div><div class="item-meta"><span class="category-badge"><i class="category-dot" style="background:${color}"></i>${esc(c?.name||'Jenis dihapus')}</span> • ${e.expense_date}</div></div><div style="display:flex;align-items:center;gap:7px"><div class="amount negative">−${rupiah(e.amount)}</div><button class="icon-btn" onclick="deleteExpense('${e.id}')">×</button></div></div>`;
 }
 function render(){
   if(!currentUser)return;
@@ -417,88 +388,74 @@ function exportData(){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download='backup-dompet-harian-cloud.json';a.click();
 }
 
-async function exportExcelReport(){
-  const btn=document.querySelector('button[onclick="exportExcelReport()"]'), oldText=btn?btn.textContent:'';
-  try{if(btn){btn.disabled=true;btn.textContent='⏳ Membuat Excel...';}await window.__loadExcelJS();}catch(err){console.error(err);toast('Library Excel gagal dimuat. Coba refresh dan pastikan internet aktif.');if(btn){btn.disabled=false;btn.textContent=oldText;}return;}
-  try{
+function exportExcelReport(){
+  if(!window.XLSX){ toast('Library Excel belum siap. Coba refresh halaman.'); return; }
   const dm=selectedDashboardMonth(), bm=selectedBudgetMonth();
+  const wb=XLSX.utils.book_new();
   const exp=state.expenses.filter(e=>String(e.expense_date).slice(0,7)===dm);
-  const total=exp.reduce((a,e)=>a+(Number(e.amount)||0),0), budget=totalBudget(), remain=budget-total;
-  const cats=state.categories.map(c=>{const b=Number(c.budget)||0,u=spent(c.id,bm);return {id:c.id,name:c.name,b:b,u:u,s:b-u,p:b?u/b:0};});
-  const used=cats.filter(x=>x.u>0).sort((a,b)=>b.u-a.u);
-  const top=used[0]; const largest=[...exp].sort((a,b)=>(Number(b.amount)||0)-(Number(a.amount)||0))[0];
-  const days=new Date(Number(dm.slice(0,4)),Number(dm.slice(5,7)),0).getDate();
-  const daily=Array.from({length:days},(_,i)=>{const d=i+1,date=`${dm}-${String(d).padStart(2,'0')}`,arr=exp.filter(e=>e.expense_date===date);return {date,count:arr.length,total:arr.reduce((a,e)=>a+Number(e.amount||0),0)}});
-  const pct=budget?total/budget:0;
-  const wb=new ExcelJS.Workbook(); wb.creator='Dompet Harian'; wb.created=new Date(); wb.modified=new Date(); wb.properties.title='Laporan Profesional Dompet Harian';
-  const navy='101828', purple='7658FF', red='F04438', green='12B76A', orange='F79009', light='F8FAFC', line='D0D5DD', dark='344054', white='FFFFFF';
-  const moneyFmt='[$Rp-421] #,##0';
-  function setup(ws, widths){ws.views=[{showGridLines:false}];ws.columns=widths.map(w=>({width:w}));}
-  function title(ws,text,lastCol){ws.mergeCells(`A1:${lastCol}2`);const c=ws.getCell('A1');c.value=text;c.font={name:'Aptos Display',size:22,bold:true,color:{argb:'FFFFFFFF'}};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF'+navy}};c.alignment={vertical:'middle',horizontal:'center'};}
-  function header(row){row.eachCell(c=>{c.font={bold:true,color:{argb:'FFFFFFFF'}};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF475467'}};c.alignment={horizontal:'center',vertical:'middle',wrapText:true};c.border={bottom:{style:'thin',color:{argb:'FF'+line}}};});}
-  function fmtRows(ws,start,end){for(let r=start;r<=end;r++){ws.getRow(r).eachCell(c=>{c.border={top:{style:'thin',color:{argb:'FFE4E7EC'}},bottom:{style:'thin',color:{argb:'FFE4E7EC'}},left:{style:'thin',color:{argb:'FFE4E7EC'}},right:{style:'thin',color:{argb:'FFE4E7EC'}}};if(r%2===0)c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF8FAFC'}};c.alignment={vertical:'top',wrapText:true};});}}
-  function makeChartCanvas(kind){const canvas=document.createElement('canvas');canvas.width=1200;canvas.height=620;const ctx=canvas.getContext('2d');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,1200,620);ctx.font='bold 28px Arial';ctx.fillStyle='#101828';
-    if(kind==='trend'){
-      ctx.fillText('Tren Pengeluaran Harian — '+monthLabel(dm),40,45);const left=90,right=35,topY=85,bottom=545,max=Math.max(1,...daily.map(x=>x.total));const maxNice=Math.ceil(max/100000)*100000||100000;ctx.strokeStyle='#E4E7EC';ctx.lineWidth=1;ctx.font='16px Arial';ctx.fillStyle='#667085';
-      for(let i=0;i<=5;i++){const y=bottom-i*(bottom-topY)/5;ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(1160,y);ctx.stroke();ctx.fillText(rupiah(maxNice*i/5).replace('Rp','Rp '),8,y+5);}
-      const pts=daily.map((x,i)=>[left+i*(1070/Math.max(1,days-1)),bottom-x.total/maxNice*(bottom-topY)]);ctx.strokeStyle='#7658FF';ctx.lineWidth=5;ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.stroke();
-      pts.forEach((p,i)=>{if(daily[i].total>0){ctx.fillStyle='#7658FF';ctx.beginPath();ctx.arc(p[0],p[1],7,0,Math.PI*2);ctx.fill();}});
-      ctx.fillStyle='#667085';ctx.font='15px Arial';daily.forEach((x,i)=>{if(i===0||i===days-1||i%Math.max(1,Math.ceil(days/8))===0)ctx.fillText(String(i+1).padStart(2,'0')+'/'+dm.slice(5),pts[i][0]-15,580);});
-    } else if(kind==='donut'){
-      ctx.fillText('Komposisi Pengeluaran — '+monthLabel(dm),40,45);const cx=350,cy=330,r=190;let a=-Math.PI/2;const colors=['#7658FF','#5B8CFF','#12B76A','#F79009','#F04438','#14B8A6','#EC4899','#8B5CF6','#06B6D4'];used.slice(0,9).forEach((x,i)=>{const ang=total?x.u/total*Math.PI*2:0;ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,a,a+ang);ctx.closePath();ctx.fillStyle=colors[i%colors.length];ctx.fill();a+=ang;});ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(cx,cy,85,0,Math.PI*2);ctx.fill();ctx.fillStyle='#101828';ctx.textAlign='center';ctx.font='bold 23px Arial';ctx.fillText(rupiah(total),cx,cy);ctx.textAlign='left';used.slice(0,9).forEach((x,i)=>{const y=120+i*48;ctx.fillStyle=colors[i%colors.length];ctx.fillRect(650,y-16,18,18);ctx.fillStyle='#344054';ctx.font='18px Arial';ctx.fillText(x.name,680,y);ctx.textAlign='right';ctx.fillText(rupiah(x.u)+' ('+(total?x.u/total*100:0).toFixed(1)+'%)',1150,y);ctx.textAlign='left';});
-    } else {
-      ctx.fillText('Budget vs Pengeluaran — '+monthLabel(bm),40,45);const rows=cats.slice().sort((a,b)=>b.u-a.u).slice(0,10),max=Math.max(1,...rows.map(x=>Math.max(x.b,x.u)));rows.forEach((x,i)=>{const y=105+i*48;ctx.fillStyle='#344054';ctx.font='17px Arial';ctx.fillText(x.name,40,y+8);ctx.fillStyle='#E4E7EC';ctx.fillRect(250,y-12,650,18);ctx.fillStyle='#5B8CFF';ctx.fillRect(250,y-12,650*(x.b/max),18);ctx.fillStyle='#F04438';ctx.fillRect(250,y+10,650*(x.u/max),18);ctx.fillStyle='#344054';ctx.font='14px Arial';ctx.fillText('Budget '+rupiah(x.b),920,y-1);ctx.fillText('Terpakai '+rupiah(x.u),920,y+20);});ctx.fillStyle='#5B8CFF';ctx.fillRect(40,590,18,18);ctx.fillStyle='#344054';ctx.fillText('Budget',65,605);ctx.fillStyle='#F04438';ctx.fillRect(145,590,18,18);ctx.fillStyle='#344054';ctx.fillText('Terpakai',170,605);
-    } return canvas.toDataURL('image/png'); }
-  const imgTrend=makeChartCanvas('trend'),imgDonut=makeChartCanvas('donut'),imgBudget=makeChartCanvas('budget');
-  // Dashboard
-  const ws=wb.addWorksheet('Dashboard');setup(ws,[3,25,19,19,3,25,19,19]);title(ws,'DOMPET HARIAN — PROFESSIONAL FINANCE REPORT','H');ws.mergeCells('B3:H3');ws.getCell('B3').value='Periode: '+monthLabel(dm)+'  •  Laporan dibuat otomatis dari aplikasi';ws.getCell('B3').font={italic:true,color:{argb:'FF667085'}};ws.getCell('B3').alignment={horizontal:'center'};
-  [['B5:C5','TOTAL BUDGET',budget,green],['D5:E5','TOTAL PENGELUARAN',total,red],['F5:G5','SISA BUDGET',remain,remain>=0?green:orange]].forEach(([merge,label,val,col])=>{ws.mergeCells(merge);const a=merge.split(':')[0],r=ws.getCell(a).row,c=ws.getCell(a).column;ws.getCell(a).value=label;ws.getCell(a).font={bold:true,color:{argb:'FFFFFFFF'}};ws.getCell(a).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF'+col}};ws.getCell(a).alignment={horizontal:'center'};const cell=ws.getCell(r+1,c);ws.mergeCells(`${ws.getCell(r+1,c).address}:${ws.getCell(r+1,c+1).address}`);cell.value=val;cell.numFmt=moneyFmt;cell.font={bold:true,size:18,color:{argb:'FF'+col}};cell.alignment={horizontal:'center',vertical:'middle'};});
-  ws.mergeCells('B9:H9');ws.getCell('B9').value='ANALISIS CEPAT';ws.getCell('B9').font={bold:true,color:{argb:'FFFFFFFF'}};ws.getCell('B9').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF161D33'}};
-  const metrics=[['Jumlah transaksi',exp.length],['Kategori terbesar',top?.name||'-'],['Pengeluaran terbesar',largest?Number(largest.amount):0],['% budget terpakai',pct]];metrics.forEach((m,i)=>{const r=11+i*2;ws.getCell(`B${r}`).value=m[0];ws.getCell(`C${r}`).value=m[1];ws.getCell(`B${r}`).font={bold:true,color:{argb:'FF475467'}};ws.getCell(`C${r}`).font={bold:true,size:13};if(i===2)ws.getCell(`C${r}`).numFmt=moneyFmt;if(i===3)ws.getCell(`C${r}`).numFmt='0.0%';});
-  ws.mergeCells('B19:H19');ws.getCell('B19').value='GRAFIK & ANALISIS VISUAL';ws.getCell('B19').font={bold:true,color:{argb:'FFFFFFFF'}};ws.getCell('B19').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF161D33'}};
-  const id1=wb.addImage({base64:imgTrend,extension:'png'});ws.addImage(id1,{tl:{col:1,row:20},ext:{width:720,height:372}});const id2=wb.addImage({base64:imgDonut,extension:'png'});ws.addImage(id2,{tl:{col:1,row:40},ext:{width:720,height:372}});ws.getRow(20).height=25;ws.getRow(40).height=25;
-  // Budget
-  const wbws=wb.addWorksheet('Analisis Budget');setup(wbws,[28,18,18,18,15,18]);title(wbws,'ANALISIS BUDGET — '+monthLabel(bm),'F');wbws.addRow([]);wbws.addRow(['Kategori','Budget','Terpakai','Sisa','% Terpakai','Status']);header(wbws.getRow(3));cats.forEach(x=>{const status=x.b===0?'BELUM ADA BUDGET':x.p>1?'MELEBIHI':x.p>=.8?'WASPADA':'AMAN';const r=wbws.addRow([x.name,x.b,x.u,x.s,x.p,status]);r.getCell(2).numFmt=moneyFmt;r.getCell(3).numFmt=moneyFmt;r.getCell(4).numFmt=moneyFmt;r.getCell(5).numFmt='0.0%';if(status==='AMAN')r.getCell(6).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDCFCE7'}};else if(status==='WASPADA')r.getCell(6).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFEF3C7'}};else r.getCell(6).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFEE2E2'}};});fmtRows(wbws,4,wbws.rowCount);const id3=wb.addImage({base64:imgBudget,extension:'png'});wbws.addImage(id3,{tl:{col:0,row:wbws.rowCount+2},ext:{width:720,height:372}});
-  // Trend
-  const tw=wb.addWorksheet('Tren Harian');setup(tw,[15,15,18,22]);title(tw,'TREN PENGELUARAN HARIAN — '+monthLabel(dm),'D');tw.addRow([]);tw.addRow(['Tanggal','Hari','Jumlah Transaksi','Total Pengeluaran']);header(tw.getRow(3));daily.forEach(x=>{const r=tw.addRow([x.date,new Date(x.date+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long'}),x.count,x.total]);r.getCell(4).numFmt=moneyFmt;});fmtRows(tw,4,tw.rowCount);tw.autoFilter={from:'A3',to:`D${tw.rowCount}`};const id4=wb.addImage({base64:imgTrend,extension:'png'});tw.addImage(id4,{tl:{col:0,row:tw.rowCount+2},ext:{width:720,height:372}});
-  // Category
-  const cw=wb.addWorksheet('Analisis Kategori');setup(cw,[8,28,22,18]);title(cw,'ANALISIS KATEGORI — '+monthLabel(dm),'D');cw.addRow([]);cw.addRow(['No','Kategori','Total Pengeluaran','% Komposisi']);header(cw.getRow(3));used.forEach((x,i)=>{const r=cw.addRow([i+1,x.name,x.u,total?x.u/total:0]);r.getCell(3).numFmt=moneyFmt;r.getCell(4).numFmt='0.0%';});fmtRows(cw,4,cw.rowCount);const id5=wb.addImage({base64:imgDonut,extension:'png'});cw.addImage(id5,{tl:{col:0,row:cw.rowCount+2},ext:{width:720,height:372}});
-  // Transactions
-  const tx=wb.addWorksheet('Detail Transaksi');setup(tx,[8,15,15,28,42,20]);title(tx,'DETAIL TRANSAKSI — '+monthLabel(dm),'F');tx.addRow([]);tx.addRow(['No','Tanggal','Hari','Kategori','Keterangan','Nominal']);header(tx.getRow(3));[...exp].sort((a,b)=>String(a.expense_date).localeCompare(String(b.expense_date))).forEach((e,i)=>{const r=tx.addRow([i+1,e.expense_date,new Date(e.expense_date+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long'}),cat(e.category_id)?.name||'Jenis dihapus',e.note||'',Number(e.amount)||0]);r.getCell(6).numFmt=moneyFmt;});fmtRows(tx,4,tx.rowCount);tx.autoFilter={from:'A3',to:`F${tx.rowCount}`};
-  // Summary analysis
-  const aw=wb.addWorksheet('Analisa & Insight');setup(aw,[28,22,60]);title(aw,'ANALISA & INSIGHT — '+monthLabel(dm),'C');aw.addRow([]);aw.addRow(['Indikator','Nilai','Interpretasi']);header(aw.getRow(3));const avg=days?total/days:0,topPct=total&&top?top.u/total:0;[["Rata-rata pengeluaran/hari",avg,'Rata-rata dari total pengeluaran dibagi jumlah hari kalender.'],['Kategori terbesar',top?.name||'-',top?rupiah(top.u)+' ('+(topPct*100).toFixed(1)+'% dari total).':'Belum ada pengeluaran.'],['Pengeluaran terbesar',largest?rupiah(largest.amount):'-',largest?'Transaksi terbesar pada periode ini.':'Belum ada transaksi.'],['Hari terboros',daily.reduce((a,b)=>b.total>a.total?b:a,{total:0}).date||'-',daily.length?'Tanggal dengan total pengeluaran harian tertinggi.':'Belum ada transaksi.'],['Penggunaan budget',pct,pct>1?'Pengeluaran sudah melebihi total budget.':pct>=.8?'Budget sudah mendekati batas.':'Budget masih relatif terkendali.']].forEach(x=>{const r=aw.addRow(x);if(typeof x[1]==='number'){if(x[0].includes('budget'))r.getCell(2).numFmt='0.0%';else r.getCell(2).numFmt=moneyFmt;}});fmtRows(aw,4,aw.rowCount);
-  // freeze panes
-  [wbws,tw,cw,tx,aw].forEach(x=>x.views=[{state:'frozen',ySplit:3,showGridLines:false}]);ws.views=[{showGridLines:false}];
-  const buffer=await wb.xlsx.writeBuffer();
-  const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const filename=`Laporan_Profesional_Dompet_Harian_${dm}.xlsx`;
-  // Gunakan link download yang benar-benar terpasang di DOM. Ini lebih stabil
-  // di Chrome/Edge desktop maupun Android dibanding a.click() tanpa parent.
-  const url=URL.createObjectURL(blob),a=document.createElement('a');
-  a.href=url;a.download=filename;a.target='_blank';a.rel='noopener';
-  a.style.position='fixed';a.style.left='-9999px';
-  document.body.appendChild(a);
-  a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
-  setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},10000);
-  toast('Laporan Excel profesional dengan grafik & analisis berhasil dibuat');
-  }catch(err){
-    console.error('Export Excel gagal:',err);
-    // Fallback: tetap menghasilkan file yang dapat dibuka Microsoft Excel
-    // apabila ExcelJS gagal/terblokir oleh browser atau CDN.
-    try{
-      const dm=selectedDashboardMonth();
-      const exp=state.expenses.filter(e=>String(e.expense_date).slice(0,7)===dm);
-      const rows=exp.map((e,i)=>`<tr><td>${i+1}</td><td>${esc(e.expense_date)}</td><td>${esc(cat(e.category_id)?.name||'Jenis dihapus')}</td><td>${esc(e.note||'')}</td><td>${Number(e.amount)||0}</td></tr>`).join('');
-      const total=exp.reduce((a,e)=>a+(Number(e.amount)||0),0);
-      const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif}h1{color:#101828}table{border-collapse:collapse}th{background:#475467;color:white}th,td{border:1px solid #d0d5dd;padding:7px}td.num{text-align:right}</style></head><body><h1>DOMPET HARIAN — LAPORAN ${monthLabel(dm)}</h1><p>Total pengeluaran: <b>Rp ${Math.round(total).toLocaleString('id-ID')}</b></p><table><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th></tr>${rows}<tr><th colspan="4">TOTAL</th><th>${Math.round(total)}</th></tr></table></body></html>`;
-      const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-      a.href=url;a.download=`Laporan_Dompet_Harian_${dm}.xls`;a.style.position='fixed';a.style.left='-9999px';document.body.appendChild(a);a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},10000);
-      toast('Excel berhasil dibuat dengan mode kompatibilitas.');
-    }catch(fallbackErr){console.error('Fallback Excel gagal:',fallbackErr);toast('Excel gagal dibuat. Buka Console browser untuk detail error.');}
-  }
-  finally{if(btn){btn.disabled=false;btn.textContent=oldText;}}
-}
+  const total=exp.reduce((a,e)=>a+(Number(e.amount)||0),0);
+  const budget=totalBudget(), remain=budget-total;
+  const cats=state.categories.map(c=>{const b=Number(c.budget)||0,u=spent(c.id,dm);return {name:c.name,b,u,s:b-u,p:b?u/b:0};});
+  const money='#,##0';
+  const colors=['5B8CFF','7C5CFF','12B76A','F79009','F04438','14B8A6','EC4899','64748B'];
+  const title={font:{bold:true,sz:22,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'0B1020'}},alignment:{horizontal:'center',vertical:'center'}};
+  const section={font:{bold:true,color:{rgb:'FFFFFF'},sz:12},fill:{fgColor:{rgb:'161D33'}},alignment:{horizontal:'left',vertical:'center'}};
+  const head={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'475467'}},alignment:{horizontal:'center',vertical:'center'},border:{bottom:{style:'thin',color:{rgb:'CBD5E1'}}}};
+  const thin={top:{style:'thin',color:{rgb:'E2E8F0'}},bottom:{style:'thin',color:{rgb:'E2E8F0'}},left:{style:'thin',color:{rgb:'E2E8F0'}},right:{style:'thin',color:{rgb:'E2E8F0'}}};
+  function cell(ws,a,v,style={}){ws[a]={v,t:typeof v==='number'?'n':'s',s:style};}
+  function zebra(ws,range,cols){for(let r=range[0];r<=range[1];r++)for(let c=0;c<cols;c++){const a=XLSX.utils.encode_cell({r:r-1,c});if(ws[a])ws[a].s={...(ws[a].s||{}),border:thin,fill:{fgColor:{rgb:r%2?'FFFFFF':'F8FAFC'}}};}}
 
+  // DASHBOARD
+  const dash=[]; for(let i=0;i<32;i++)dash.push([]);
+  const wsD=XLSX.utils.aoa_to_sheet(dash);
+  wsD['!cols']=[{wch:4},{wch:24},{wch:18},{wch:18},{wch:4},{wch:24},{wch:18},{wch:18}];
+  wsD['!rows']=[{hpt:32},{hpt:30},{hpt:28},{hpt:8},{hpt:28},{hpt:28},{hpt:8},{hpt:28},{hpt:26},{hpt:26},{hpt:8},{hpt:26}];
+  wsD['!merges']=[XLSX.utils.decode_range('B2:G2'),XLSX.utils.decode_range('B3:G3'),XLSX.utils.decode_range('B5:C5'),XLSX.utils.decode_range('D5:E5'),XLSX.utils.decode_range('F5:G5'),XLSX.utils.decode_range('B8:G8'),XLSX.utils.decode_range('B9:G9'),XLSX.utils.decode_range('B14:G14')];
+  cell(wsD,'B2','DOMPET HARIAN — PROFESSIONAL FINANCE REPORT',title);
+  cell(wsD,'B3','Periode laporan: '+monthLabel(dm)+'  •  Dibuat otomatis dari aplikasi', {font:{italic:true,color:{rgb:'475467'}},alignment:{horizontal:'center'}});
+  [['B5','TOTAL BUDGET',budget,'5B8CFF'],['D5','TOTAL PENGELUARAN',total,'F04438'],['F5','SISA BUDGET',remain,remain>=0?'12B76A':'F79009']].forEach(([a,label,val,col])=>{cell(wsD,a,label,{font:{bold:true,color:{rgb:'FFFFFF'},sz:10},fill:{fgColor:{rgb:col}},alignment:{horizontal:'center'}});const next=XLSX.utils.encode_cell({r:XLSX.utils.decode_cell(a).r+1,c:XLSX.utils.decode_cell(a).c});cell(wsD,next,val,{font:{bold:true,sz:18,color:{rgb:col}},alignment:{horizontal:'center'},numFmt:money,fill:{fgColor:{rgb:'F8FAFC'}},border:thin});});
+  cell(wsD,'B8','RINGKASAN UTAMA',section);
+  const top=[...cats].sort((a,b)=>b.u-a.u)[0], largest=[...exp].sort((a,b)=>b.amount-a.amount)[0];
+  const metrics=[['Jumlah Transaksi',exp.length],['Kategori Terbesar',top?top.name:'-'],['Pengeluaran Terbesar',largest?Number(largest.amount):0],['% Budget Terpakai',budget?total/budget:0]];
+  metrics.forEach((x,i)=>{const r=10+i*2;cell(wsD,'B'+r,x[0],{font:{bold:true,color:{rgb:'475467'}},fill:{fgColor:{rgb:'F8FAFC'}},border:thin});cell(wsD,'C'+r,x[1],{font:{bold:true,sz:13},border:thin,numFmt:i===2?money:i===3?'0.0%':'General'});});
+  cell(wsD,'B14','STATUS KATEGORI & PENGGUNAAN BUDGET',section);
+  cell(wsD,'B16','Kategori',head);cell(wsD,'C16','Budget',head);cell(wsD,'D16','Terpakai',head);cell(wsD,'E16','Sisa',head);cell(wsD,'F16','% Terpakai',head);cell(wsD,'G16','Status',head);
+  cats.forEach((x,i)=>{const r=17+i;const status=x.b===0?'Belum ada budget':x.p>1?'MELEBIHI':x.p>=.8?'WASPADA':'AMAN';const fill=status==='AMAN'?'DCFCE7':status==='WASPADA'?'FEF3C7':status==='MELEBIHI'?'FEE2E2':'E2E8F0';[['B',x.name],['C',x.b],['D',x.u],['E',x.s],['F',x.p],['G',status]].forEach(([col,v])=>cell(wsD,col+r,v,{border:thin,fill:{fgColor:{rgb:col==='G'?fill:(i%2?'F8FAFC':'FFFFFF')}},font:{bold:col==='G'},numFmt:['C','D','E'].includes(col)?money:col==='F'?'0.0%':'General'}));});
+  XLSX.utils.book_append_sheet(wb,wsD,'Dashboard');
+
+  // BUDGET ANALYSIS
+  const br=[['ANALISIS BUDGET — '+monthLabel(bm)],[],['Kategori','Budget','Terpakai','Sisa','% Terpakai','Status']];
+  state.categories.forEach(c=>{const b=Number(c.budget)||0,u=spent(c.id,bm),p=b?u/b:0;br.push([c.name,b,u,b-u,p,p>1?'MELEBIHI':p>=.8?'WASPADA':'AMAN']);});
+  const wsB=XLSX.utils.aoa_to_sheet(br);wsB['!cols']=[{wch:28},{wch:18},{wch:18},{wch:18},{wch:15},{wch:18}];wsB['!merges']=[XLSX.utils.decode_range('A1:F1')];wsB['A1'].s=title;wsB['!rows']=[{hpt:30}];
+  for(let c=0;c<6;c++)wsB[XLSX.utils.encode_cell({r:2,c})].s=head;
+  for(let r=3;r<br.length;r++){for(let c=0;c<6;c++){const a=XLSX.utils.encode_cell({r,c});if(wsB[a])wsB[a].s={border:thin,fill:{fgColor:{rgb:r%2?'F8FAFC':'FFFFFF'}},numFmt:[1,2,3].includes(c)?money:c===4?'0.0%':'General'};}const st=wsB['F'+(r+1)].v,fc=st==='AMAN'?'DCFCE7':st==='WASPADA'?'FEF3C7':'FEE2E2';wsB['F'+(r+1)].s.fill={fgColor:{rgb:fc}};wsB['F'+(r+1)].s.font={bold:true};}
+  XLSX.utils.book_append_sheet(wb,wsB,'Analisis Budget');
+
+  // DAILY TREND
+  const [yy,mm]=dm.split('-').map(Number),days=new Date(yy,mm,0).getDate();
+  const tr=[['TREN PENGELUARAN HARIAN — '+monthLabel(dm)],[],['Tanggal','Hari','Jumlah Transaksi','Total Pengeluaran','Visual']];
+  for(let d=1;d<=days;d++){const date=`${dm}-${String(d).padStart(2,'0')}`,arr=exp.filter(e=>e.expense_date===date),v=arr.reduce((a,e)=>a+Number(e.amount),0);tr.push([date,new Date(date+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long'}),arr.length,v,'']);}
+  const wsT=XLSX.utils.aoa_to_sheet(tr);wsT['!cols']=[{wch:15},{wch:14},{wch:18},{wch:22},{wch:45}];wsT['!merges']=[XLSX.utils.decode_range('A1:E1')];wsT['A1'].s=title;for(let c=0;c<5;c++)wsT[XLSX.utils.encode_cell({r:2,c})].s=head;
+  const max=Math.max(1,...tr.slice(3).map(x=>x[3]));for(let r=4;r<=tr.length;r++){const val=wsT['D'+r].v||0,bars='█'.repeat(Math.round((val/max)*28));wsT['E'+r]={v:bars,t:'s',s:{font:{color:{rgb:'5B8CFF'}},border:thin,fill:{fgColor:{rgb:r%2?'F8FAFC':'FFFFFF'}}}};for(let c=0;c<4;c++){const a=XLSX.utils.encode_cell({r:r-1,c});if(wsT[a])wsT[a].s={border:thin,fill:{fgColor:{rgb:r%2?'F8FAFC':'FFFFFF'}},numFmt:c===3?money:'General'};}}
+  XLSX.utils.book_append_sheet(wb,wsT,'Tren Harian');
+
+  // CATEGORY ANALYSIS
+  const cr=[['ANALISIS KATEGORI — '+monthLabel(dm)],[],['No','Kategori','Total Pengeluaran','% Komposisi','Visual']];
+  const used=cats.filter(x=>x.u>0).sort((a,b)=>b.u-a.u);used.forEach((x,i)=>cr.push([i+1,x.name,x.u,total?x.u/total:0,'']));
+  const wsC=XLSX.utils.aoa_to_sheet(cr);wsC['!cols']=[{wch:8},{wch:28},{wch:22},{wch:16},{wch:40}];wsC['!merges']=[XLSX.utils.decode_range('A1:E1')];wsC['A1'].s=title;for(let c=0;c<5;c++)wsC[XLSX.utils.encode_cell({r:2,c})].s=head;
+  const mx=Math.max(1,...used.map(x=>x.u));used.forEach((x,i)=>{const r=4+i,bars='█'.repeat(Math.round(x.u/mx*24));wsC['E'+r]={v:bars,t:'s',s:{font:{color:{rgb:colors[i%colors.length]}},border:thin}};for(let c=0;c<4;c++){const a=XLSX.utils.encode_cell({r:r-1,c});if(wsC[a])wsC[a].s={border:thin,fill:{fgColor:{rgb:r%2?'F8FAFC':'FFFFFF'}},numFmt:c===2?money:c===3?'0.0%':'General'};}});
+  XLSX.utils.book_append_sheet(wb,wsC,'Analisis Kategori');
+
+  // DETAIL TRANSACTIONS
+  const tx=[['DETAIL TRANSAKSI — '+monthLabel(dm)],[],['No','Tanggal','Hari','Kategori','Keterangan','Nominal']];
+  [...exp].sort((a,b)=>String(a.expense_date).localeCompare(String(b.expense_date))).forEach((e,i)=>tx.push([i+1,e.expense_date,new Date(e.expense_date+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long'}),cat(e.category_id)?.name||'Jenis dihapus',e.note||'',Number(e.amount)||0]));
+  const wsX=XLSX.utils.aoa_to_sheet(tx);wsX['!cols']=[{wch:8},{wch:15},{wch:14},{wch:25},{wch:42},{wch:20}];wsX['!merges']=[XLSX.utils.decode_range('A1:F1')];wsX['A1'].s=title;for(let c=0;c<6;c++)wsX[XLSX.utils.encode_cell({r:2,c})].s=head;
+  for(let r=4;r<=tx.length;r++)for(let c=0;c<6;c++){const a=XLSX.utils.encode_cell({r:r-1,c});if(wsX[a])wsX[a].s={border:thin,fill:{fgColor:{rgb:r%2?'F8FAFC':'FFFFFF'}},alignment:{vertical:'top',wrapText:c===4},numFmt:c===5?money:'General'};}
+  wsX['!autofilter']={ref:'A3:F'+Math.max(3,tx.length)};XLSX.utils.book_append_sheet(wb,wsX,'Detail Transaksi');
+
+  XLSX.writeFile(wb,`Laporan_Profesional_Dompet_Harian_${dm}.xlsx`);
+  toast('Laporan Excel profesional berhasil dibuat');
+}
 async function importData(ev){
   const f=ev.target.files[0];if(!f)return;const d=JSON.parse(await f.text());
   if(!Array.isArray(d.categories)||!Array.isArray(d.expenses))return alert('Backup tidak valid.');
