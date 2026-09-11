@@ -188,7 +188,13 @@ body{font-size:calc(16px * var(--font-scale));line-height:1.5}
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script>
+window.__loadExcelJS=function(){
+ if(window.ExcelJS)return Promise.resolve(window.ExcelJS);
+ const urls=['https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js','https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js','https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'];
+ return new Promise((resolve,reject)=>{let i=0;function next(){if(window.ExcelJS)return resolve(window.ExcelJS);if(i>=urls.length)return reject(new Error('ExcelJS gagal dimuat'));const s=document.createElement('script');s.src=urls[i++];s.onload=()=>window.ExcelJS?resolve(window.ExcelJS):next();s.onerror=next;document.head.appendChild(s)}next()});
+};
+</script>
 <script src="config.js"></script>
 <script>
 
@@ -412,7 +418,9 @@ function exportData(){
 }
 
 async function exportExcelReport(){
-  if(!window.ExcelJS){ toast('Library Excel belum siap. Coba refresh halaman.'); return; }
+  const btn=document.querySelector('button[onclick="exportExcelReport()"]'), oldText=btn?btn.textContent:'';
+  try{if(btn){btn.disabled=true;btn.textContent='⏳ Membuat Excel...';}await window.__loadExcelJS();}catch(err){console.error(err);toast('Library Excel gagal dimuat. Coba refresh dan pastikan internet aktif.');if(btn){btn.disabled=false;btn.textContent=oldText;}return;}
+  try{
   const dm=selectedDashboardMonth(), bm=selectedBudgetMonth();
   const exp=state.expenses.filter(e=>String(e.expense_date).slice(0,7)===dm);
   const total=exp.reduce((a,e)=>a+(Number(e.amount)||0),0), budget=totalBudget(), remain=budget-total;
@@ -461,7 +469,14 @@ async function exportExcelReport(){
   const aw=wb.addWorksheet('Analisa & Insight');setup(aw,[28,22,60]);title(aw,'ANALISA & INSIGHT — '+monthLabel(dm),'C');aw.addRow([]);aw.addRow(['Indikator','Nilai','Interpretasi']);header(aw.getRow(3));const avg=days?total/days:0,topPct=total&&top?top.u/total:0;[["Rata-rata pengeluaran/hari",avg,'Rata-rata dari total pengeluaran dibagi jumlah hari kalender.'],['Kategori terbesar',top?.name||'-',top?rupiah(top.u)+' ('+(topPct*100).toFixed(1)+'% dari total).':'Belum ada pengeluaran.'],['Pengeluaran terbesar',largest?rupiah(largest.amount):'-',largest?'Transaksi terbesar pada periode ini.':'Belum ada transaksi.'],['Hari terboros',daily.reduce((a,b)=>b.total>a.total?b:a,{total:0}).date||'-',daily.length?'Tanggal dengan total pengeluaran harian tertinggi.':'Belum ada transaksi.'],['Penggunaan budget',pct,pct>1?'Pengeluaran sudah melebihi total budget.':pct>=.8?'Budget sudah mendekati batas.':'Budget masih relatif terkendali.']].forEach(x=>{const r=aw.addRow(x);if(typeof x[1]==='number'){if(x[0].includes('budget'))r.getCell(2).numFmt='0.0%';else r.getCell(2).numFmt=moneyFmt;}});fmtRows(aw,4,aw.rowCount);
   // freeze panes
   [wbws,tw,cw,tx,aw].forEach(x=>x.views=[{state:'frozen',ySplit:3,showGridLines:false}]);ws.views=[{showGridLines:false}];
-  const buffer=await wb.xlsx.writeBuffer();const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`Laporan_Profesional_Dompet_Harian_${dm}.xlsx`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Laporan Excel profesional dengan grafik & analisis berhasil dibuat');
+  const buffer=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const filename=`Laporan_Profesional_Dompet_Harian_${dm}.xlsx`;
+  if(navigator.msSaveOrOpenBlob) navigator.msSaveOrOpenBlob(blob,filename);
+  else {const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},3000)}
+  toast('Laporan Excel profesional dengan grafik & analisis berhasil dibuat');
+  }catch(err){console.error('Export Excel gagal:',err);toast('Gagal membuat Excel: '+(err.message||'kesalahan tidak diketahui'));}
+  finally{if(btn){btn.disabled=false;btn.textContent=oldText;}}
 }
 
 async function importData(ev){
