@@ -472,10 +472,30 @@ async function exportExcelReport(){
   const buffer=await wb.xlsx.writeBuffer();
   const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const filename=`Laporan_Profesional_Dompet_Harian_${dm}.xlsx`;
-  if(navigator.msSaveOrOpenBlob) navigator.msSaveOrOpenBlob(blob,filename);
-  else {const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},3000)}
+  // Gunakan link download yang benar-benar terpasang di DOM. Ini lebih stabil
+  // di Chrome/Edge desktop maupun Android dibanding a.click() tanpa parent.
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=filename;a.target='_blank';a.rel='noopener';
+  a.style.position='fixed';a.style.left='-9999px';
+  document.body.appendChild(a);
+  a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
+  setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},10000);
   toast('Laporan Excel profesional dengan grafik & analisis berhasil dibuat');
-  }catch(err){console.error('Export Excel gagal:',err);toast('Gagal membuat Excel: '+(err.message||'kesalahan tidak diketahui'));}
+  }catch(err){
+    console.error('Export Excel gagal:',err);
+    // Fallback: tetap menghasilkan file yang dapat dibuka Microsoft Excel
+    // apabila ExcelJS gagal/terblokir oleh browser atau CDN.
+    try{
+      const dm=selectedDashboardMonth();
+      const exp=state.expenses.filter(e=>String(e.expense_date).slice(0,7)===dm);
+      const rows=exp.map((e,i)=>`<tr><td>${i+1}</td><td>${esc(e.expense_date)}</td><td>${esc(cat(e.category_id)?.name||'Jenis dihapus')}</td><td>${esc(e.note||'')}</td><td>${Number(e.amount)||0}</td></tr>`).join('');
+      const total=exp.reduce((a,e)=>a+(Number(e.amount)||0),0);
+      const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif}h1{color:#101828}table{border-collapse:collapse}th{background:#475467;color:white}th,td{border:1px solid #d0d5dd;padding:7px}td.num{text-align:right}</style></head><body><h1>DOMPET HARIAN — LAPORAN ${monthLabel(dm)}</h1><p>Total pengeluaran: <b>Rp ${Math.round(total).toLocaleString('id-ID')}</b></p><table><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th></tr>${rows}<tr><th colspan="4">TOTAL</th><th>${Math.round(total)}</th></tr></table></body></html>`;
+      const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download=`Laporan_Dompet_Harian_${dm}.xls`;a.style.position='fixed';a.style.left='-9999px';document.body.appendChild(a);a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},10000);
+      toast('Excel berhasil dibuat dengan mode kompatibilitas.');
+    }catch(fallbackErr){console.error('Fallback Excel gagal:',fallbackErr);toast('Excel gagal dibuat. Buka Console browser untuk detail error.');}
+  }
   finally{if(btn){btn.disabled=false;btn.textContent=oldText;}}
 }
 
